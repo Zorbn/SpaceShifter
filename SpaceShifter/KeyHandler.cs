@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace ModalEverything;
+namespace SpaceShifter;
 
 public class KeyHandler
 {
@@ -30,16 +30,57 @@ public class KeyHandler
     }
 
     private State _state = State.NoSpace;
+    private bool _dontIntercept;
+    private bool _isCapsPressed;
+    private bool _wasCapsUsedAsToggle;
+    private bool _isEnabled;
 
-    public int KeyboardHookProc(int nCode, IntPtr wParam, IntPtr lParam)
+    public int KeyboardHookProc(int nCode, nint wParam, nint lParam)
     {
-        if (nCode < 0)
+        if (nCode < 0 || _dontIntercept)
         {
             return WinNative.CallNextHookEx(_hHook, nCode, wParam, lParam);
         }
 
         var keyboard = Marshal.PtrToStructure<WinKeyboardHook>(lParam);
         var isSpace = keyboard.VkCode == 0x20;
+        var isCaps = keyboard.VkCode == 0x14;
+
+        if (isCaps)
+        {
+            switch (wParam)
+            {
+                case WinNative.WmKeydown:
+                    _isCapsPressed = true;
+                    break;
+                case WinNative.WmKeyup:
+                    _isCapsPressed = false;
+                    if (!_wasCapsUsedAsToggle)
+                    {
+                        _dontIntercept = true;
+                        KeyPress(0x14);
+                        KeyPress(0x14, isRelease: true);
+                        _dontIntercept = false;
+                    }
+                    break;
+            }
+
+            _wasCapsUsedAsToggle = false;
+            return 1;
+        }
+
+        // SpaceShifter was toggled.
+        if (isSpace && wParam == WinNative.WmKeydown && _state == State.NoSpace && _isCapsPressed)
+        {
+            _wasCapsUsedAsToggle = true;
+            _isEnabled = !_isEnabled;
+            return 1;
+        }
+
+        if (!_isEnabled)
+        {
+            return WinNative.CallNextHookEx(_hHook, nCode, wParam, lParam);
+        }
 
         // First space press -> start tracking & holding shift.
         if (isSpace && wParam == WinNative.WmKeydown && _state == State.NoSpace)
@@ -54,7 +95,7 @@ public class KeyHandler
         }
 
         // Space release -> stop holding shift +
-        if (isSpace && wParam == 0x101)
+        if (isSpace && wParam == WinNative.WmKeyup)
         {
             KeyPress(0x10, isRelease: true);
 
@@ -64,6 +105,8 @@ public class KeyHandler
                 // Console.WriteLine("keyup->space");
                 _state = State.SpaceAsSpace;
                 KeyPress(0x20);
+                KeyPress(0x20, isRelease: true);
+                _state = State.NoSpace;
             }
             // Space was used as a shift -> reset state.
             else
@@ -82,13 +125,16 @@ public class KeyHandler
             return WinNative.CallNextHookEx(_hHook, nCode, wParam, lParam);
         }
 
-        // We received the real space we sent earlier -> reset state and let it be processed as normal.
-        if (isSpace && wParam == WinNative.WmKeydown && _state == State.SpaceAsSpace)
-        {
-            _state = State.NoSpace;
-
-            return WinNative.CallNextHookEx(_hHook, nCode, wParam, lParam);
-        }
+        // // We received the real space we sent earlier -> reset state and let it be processed as normal.
+        // if (isSpace && (wParam == WinNative.WmKeydown || wParam == WinNative.WmKeyup) && _state == State.SpaceAsSpace)
+        // {
+        //     if (wParam == WinNative.WmKeyup)
+        //     {
+        //         _state = State.NoSpace;
+        //     }
+        //
+        //     return WinNative.CallNextHookEx(_hHook, nCode, wParam, lParam);
+        // }
 
         // Space was pressed but didn't fall into any of the other categories -> it was a repeat, ignore it.
         if (isSpace)
@@ -114,7 +160,9 @@ public class KeyHandler
             ExtraInfo = nint.Zero
         };
 
+        _dontIntercept = true;
         SendInput(inputs);
+        _dontIntercept = false;
     }
 
     private void SendInput(WinInput[] inputs)

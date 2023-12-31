@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace ModalEverything;
+namespace SpaceShifter;
 
 public struct WinPoint
 {
@@ -76,6 +76,7 @@ public static class WinNative
     public const int WhKeyboardLl = 13;
 
     public const int WmKeydown = 0x0100;
+    public const int WmKeyup = 0x0101;
 
     public delegate int HookProc(int nCode, IntPtr wParam, IntPtr lParam);
 

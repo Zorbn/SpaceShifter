@@ -1,4 +1,4 @@
-﻿namespace ModalEverything;
+﻿namespace SpaceShifter;
 
 internal static class Program
 {
